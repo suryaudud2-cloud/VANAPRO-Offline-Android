@@ -1,7 +1,9 @@
 package com.vanapro.offline
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -22,6 +24,8 @@ class MainActivity : Activity() {
     private var selectedVideo: Uri? = null
     private var outputFile: File? = null
     private lateinit var statusView: TextView
+    private lateinit var processButton: Button
+    private lateinit var metadataButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,34 +47,52 @@ class MainActivity : Activity() {
             text = "Pemrosesan video lokal • POCO M5s • hingga 1080p"
             textSize = 15f
             gravity = Gravity.CENTER
-            setPadding(0, 18, 0, 30)
+            setPadding(0, 18, 0, 22)
+        }
+        val section = TextView(this).apply {
+            text = "METADATA STUDIO"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setPadding(0, 8, 0, 8)
         }
         val pickButton = Button(this).apply {
             text = "PILIH VIDEO"
             setOnClickListener { openVideoPicker() }
         }
-        val processButton = Button(this).apply {
+        metadataButton = Button(this).apply {
+            text = "PERIKSA METADATA"
+            isEnabled = false
+            setOnClickListener { inspectMetadata() }
+        }
+        processButton = Button(this).apply {
             text = "PROSES / EKSPOR MP4"
             isEnabled = false
-            tag = "process"
             setOnClickListener { startExport() }
+        }
+        val note = TextView(this).apply {
+            text = "Profil iPhone 17 Pro hanya ditampilkan sebagai referensi. Identitas kamera tidak akan dipalsukan. Pemeriksaan SynthID/C2PA otomatis belum tersedia pada versi ini."
+            textSize = 13f
+            setPadding(0, 12, 0, 8)
         }
         statusView = TextView(this).apply {
             text = "Pilih video untuk memulai."
             textSize = 15f
-            setPadding(0, 24, 0, 0)
+            setPadding(0, 12, 0, 0)
         }
         root.addView(title, match())
         root.addView(subtitle, match())
+        root.addView(section, match())
         root.addView(pickButton, match())
+        root.addView(metadataButton, match())
         root.addView(processButton, match())
+        root.addView(note, match())
         root.addView(statusView, match())
         setContentView(root)
     }
 
     private fun match(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            bottomMargin = 12
+            bottomMargin = 10
         }
 
     private fun openVideoPicker() {
@@ -91,9 +113,9 @@ class MainActivity : Activity() {
             try {
                 contentResolver.takePersistableUriPermission(data.data!!, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) { }
-            statusView.text = "Video dipilih. Tekan PROSES / EKSPOR MP4."
-            (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as? LinearLayout)
-                ?.let { layout -> (layout.getChildAt(3) as? Button)?.isEnabled = true }
+            statusView.text = "Video dipilih. Metadata siap diperiksa."
+            metadataButton.isEnabled = true
+            processButton.isEnabled = true
         } else if (requestCode == requestSave) {
             val target = data.data ?: return
             val source = outputFile ?: return
@@ -105,6 +127,57 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 statusView.text = "Gagal menyimpan: ${e.localizedMessage}"
             }
+        }
+    }
+
+    private fun inspectMetadata() {
+        val uri = selectedVideo ?: return
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(this, uri)
+            fun value(key: Int, fallback: String = "Tidak tersedia"): String =
+                retriever.extractMetadata(key)?.takeIf { it.isNotBlank() } ?: fallback
+
+            val width = value(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            val height = value(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            val durationMs = value(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            val duration = durationMs.toLongOrNull()?.let {
+                val seconds = it / 1000
+                "${seconds / 60} menit ${seconds % 60} detik"
+            } ?: "Tidak tersedia"
+            val report = """
+                METADATA SUMBER
+
+                Judul: ${value(MediaMetadataRetriever.METADATA_KEY_TITLE)}
+                Pembuat/artist: ${value(MediaMetadataRetriever.METADATA_KEY_ARTIST)}
+                Tanggal: ${value(MediaMetadataRetriever.METADATA_KEY_DATE)}
+                Perangkat: ${value(MediaMetadataRetriever.METADATA_KEYCAPTURE_FRAMERATE, "Tidak dicantumkan")}
+                Format/MIME: ${value(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)}
+                Resolusi: $width × $height
+                Durasi: $duration
+                Bitrate: ${value(MediaMetadataRetriever.METADATA_KEY_BITRATE)}
+                Rotasi: ${value(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)}°
+                Koordinat GPS: ${value(MediaMetadataRetriever.METADATA_KEY_LOCATION)}
+
+                PROFIL IPHONE 17 PRO
+                Profil referensi saja. Model kamera hanya boleh dicatat sebagai perangkat sumber jika rekaman memang dibuat dengan perangkat tersebut.
+
+                C2PA / SYNTHID
+                Status belum dianalisis oleh pemeriksa khusus. Metadata standar yang tampil di sini tidak membuktikan ada atau tidaknya watermark/provenance.
+            """.trimIndent()
+            AlertDialog.Builder(this)
+                .setTitle("VANAPRO • Metadata Studio")
+                .setMessage(report)
+                .setPositiveButton("TUTUP", null)
+                .show()
+            statusView.text = "Metadata sumber berhasil dibaca."
+        } catch (e: Exception) {
+            statusView.text = "Gagal membaca metadata: ${e.localizedMessage}"
+            AlertDialog.Builder(this).setTitle("Metadata tidak terbaca")
+                .setMessage(e.localizedMessage ?: "Format file tidak didukung.")
+                .setPositiveButton("OK", null).show()
+        } finally {
+            try { retriever.release() } catch (_: Exception) { }
         }
     }
 
