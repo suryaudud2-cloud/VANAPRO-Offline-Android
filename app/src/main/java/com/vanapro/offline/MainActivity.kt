@@ -1,25 +1,14 @@
 package com.vanapro.offline
 
+import android.app.Activity
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.ExportException
@@ -27,76 +16,124 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import java.io.File
 
-class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalMaterial3Api::class)
+class MainActivity : Activity() {
+    private val requestVideo = 1001
+    private val requestSave = 1002
+    private var selectedVideo: Uri? = null
+    private var outputFile: File? = null
+    private lateinit var statusView: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            var inputUri by remember { mutableStateOf<Uri?>(null) }
-            var outputFile by remember { mutableStateOf<File?>(null) }
-            var status by remember { mutableStateOf("Pilih video. Semua proses berjalan lokal di perangkat.") }
+        showHome()
+    }
 
-            val chooseVideo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                inputUri = uri
-                status = if (uri == null) "Pemilihan dibatalkan." else "Video dipilih. Tekan Proses untuk ekspor MP4."
+    private fun showHome() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(36, 48, 36, 32)
+        }
+        val title = TextView(this).apply {
+            text = "VANAPRO OFFLINE"
+            textSize = 26f
+            gravity = Gravity.CENTER
+        }
+        val subtitle = TextView(this).apply {
+            text = "Pemrosesan video lokal • POCO M5s • hingga 1080p"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(0, 18, 0, 30)
+        }
+        val pickButton = Button(this).apply {
+            text = "PILIH VIDEO"
+            setOnClickListener { openVideoPicker() }
+        }
+        val processButton = Button(this).apply {
+            text = "PROSES / EKSPOR MP4"
+            isEnabled = false
+            tag = "process"
+            setOnClickListener { startExport() }
+        }
+        statusView = TextView(this).apply {
+            text = "Pilih video untuk memulai."
+            textSize = 15f
+            setPadding(0, 24, 0, 0)
+        }
+        root.addView(title, match())
+        root.addView(subtitle, match())
+        root.addView(pickButton, match())
+        root.addView(processButton, match())
+        root.addView(statusView, match())
+        setContentView(root)
+    }
+
+    private fun match(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            bottomMargin = 12
+        }
+
+    private fun openVideoPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "video/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, requestVideo)
+    }
+
+    @Deprecated("Deprecated by Android; retained for broad device compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK || data?.data == null) return
+        if (requestCode == requestVideo) {
+            selectedVideo = data.data
+            try {
+                contentResolver.takePersistableUriPermission(data.data!!, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            statusView.text = "Video dipilih. Tekan PROSES / EKSPOR MP4."
+            (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as? LinearLayout)
+                ?.let { layout -> (layout.getChildAt(3) as? Button)?.isEnabled = true }
+        } else if (requestCode == requestSave) {
+            val target = data.data ?: return
+            val source = outputFile ?: return
+            try {
+                contentResolver.openOutputStream(target)?.use { out ->
+                    source.inputStream().use { input -> input.copyTo(out) }
+                }
+                statusView.text = "Selesai. Video tersimpan."
+            } catch (e: Exception) {
+                statusView.text = "Gagal menyimpan: ${e.localizedMessage}"
             }
-            val saveOutput = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
-                val file = outputFile
-                if (uri != null && file != null) {
-                    try {
-                        contentResolver.openOutputStream(uri)?.use { destination ->
-                            file.inputStream().use { source -> source.copyTo(destination) }
+        }
+    }
+
+    private fun startExport() {
+        val uri = selectedVideo ?: return
+        val destination = File(cacheDir, "vanapro_${System.currentTimeMillis()}.mp4")
+        outputFile = destination
+        statusView.text = "Sedang memproses di perangkat…"
+        try {
+            val listener = object : Transformer.Listener {
+                override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
+                    runOnUiThread {
+                        statusView.text = "Pemrosesan selesai. Pilih lokasi penyimpanan."
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "video/mp4"
+                            putExtra(Intent.EXTRA_TITLE, "VANAPRO_${System.currentTimeMillis()}.mp4")
                         }
-                        status = "Selesai. Video tersimpan."
-                    } catch (e: Exception) {
-                        status = "Gagal menyimpan: ${e.localizedMessage}"
+                        startActivityForResult(intent, requestSave)
                     }
                 }
-            }
-
-            MaterialTheme {
-                Scaffold(topBar = { TopAppBar(title = { Text("VANAPRO OFFLINE") }) }) { inset ->
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(inset).padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text("Pemrosesan video lokal untuk Android.")
-                        Text("Target: POCO M5s • RAM 6 GB • video sumber hingga 1080p")
-                        Button(onClick = { chooseVideo.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Pilih video")
-                        }
-                        Button(
-                            enabled = inputUri != null,
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                val selected = inputUri ?: return@Button
-                                val destination = File(cacheDir, "vanapro_${System.currentTimeMillis()}.mp4")
-                                outputFile = destination
-                                status = "Sedang memproses video…"
-                                val listener = object : Transformer.Listener {
-                                    override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
-                                        runOnUiThread {
-                                            status = "Pemrosesan selesai. Pilih lokasi penyimpanan."
-                                            saveOutput.launch("VANAPRO_${System.currentTimeMillis()}.mp4")
-                                        }
-                                    }
-                                    override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
-                                        runOnUiThread { status = "Ekspor gagal: ${exportException.localizedMessage}" }
-                                    }
-                                }
-                                try {
-                                    Transformer.Builder(this@MainActivity).addListener(listener).build()
-                                        .start(EditedMediaItem.Builder(MediaItem.fromUri(selected)).build(), destination.absolutePath)
-                                } catch (e: Exception) {
-                                    status = "Tidak dapat memulai ekspor: ${e.localizedMessage}"
-                                }
-                            }
-                        ) { Text("Proses / ekspor MP4") }
-                        Text(status)
-                        Text("Tidak menggunakan server, akun, lisensi, atau izin internet. Hasil mengikuti resolusi sumber dan dukungan codec perangkat.")
-                    }
+                override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
+                    runOnUiThread { statusView.text = "Ekspor gagal: ${exportException.localizedMessage}" }
                 }
             }
+            Transformer.Builder(this).addListener(listener).build()
+                .start(EditedMediaItem.Builder(MediaItem.fromUri(uri)).build(), destination.absolutePath)
+        } catch (e: Exception) {
+            statusView.text = "Tidak dapat memulai ekspor: ${e.localizedMessage}"
         }
     }
 }
