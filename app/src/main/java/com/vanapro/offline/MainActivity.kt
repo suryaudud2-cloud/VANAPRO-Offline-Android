@@ -151,7 +151,7 @@ class MainActivity : Activity() {
                 Judul: ${value(MediaMetadataRetriever.METADATA_KEY_TITLE)}
                 Pembuat/artist: ${value(MediaMetadataRetriever.METADATA_KEY_ARTIST)}
                 Tanggal: ${value(MediaMetadataRetriever.METADATA_KEY_DATE)}
-                Perangkat: ${value(MediaMetadataRetriever.METADATA_KEYCAPTURE_FRAMERATE, "Tidak dicantumkan")}
+                Penulis: ${value(MediaMetadataRetriever.METADATA_KEY_AUTHOR)}
                 Format/MIME: ${value(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)}
                 Resolusi: $width × $height
                 Durasi: $duration
