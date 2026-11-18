@@ -44,7 +44,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showHome()
-        narrationEngine = NarrationEngine(this) { message -> runOnUiThread { statusView.text = message; narrationButton.isEnabled = narrationEngine?.isReady() == true } }
+        narrationEngine = NarrationEngine(this) { message -> runOnUiThread { statusView.text = message; if (message == "TTS Indonesia offline siap.") narrationButton.isEnabled = true } }
     }
 
     private fun showHome() {
