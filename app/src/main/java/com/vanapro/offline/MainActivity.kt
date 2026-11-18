@@ -18,7 +18,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.ScrollView
 import androidx.media3.common.MediaItem
-import androidx.media3.common.C
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Composition
@@ -264,15 +263,11 @@ class MainActivity : Activity() {
         }
         val index = versionIndex
         val video = EditedMediaItem.Builder(MediaItem.fromUri(source))
-            .setEffects(Effects(emptyList(), listOf(Presentation.createForShortSide(1080))))
+            .setEffects(Effects(emptyList(), listOf(Presentation.createForHeight(1080))))
             .build()
         val audio = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(versionAudioFiles[index]))).build()
-        val videoSequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO))
-            .addItem(video)
-            .build()
-        val audioSequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
-            .addItem(audio)
-            .build()
+        val videoSequence = EditedMediaItemSequence.Builder(video).build()
+        val audioSequence = EditedMediaItemSequence.Builder(audio).build()
         val composition = Composition.Builder(videoSequence, audioSequence).build()
         val output = File(cacheDir, "vanapro_creative_v${index + 1}.mp4").apply { delete() }
         versionOutput = output
