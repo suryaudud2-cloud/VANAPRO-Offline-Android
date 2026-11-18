@@ -3,17 +3,24 @@ package com.vanapro.offline
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.ContentValues
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.ScrollView
 import androidx.media3.common.MediaItem
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.Composition
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
@@ -30,6 +37,9 @@ class MainActivity : Activity() {
     private lateinit var narrationButton: Button
     private lateinit var narrationInputs: List<EditText>
     private var narrationEngine: NarrationEngine? = null
+    private var versionAudioFiles: List<File> = emptyList()
+    private var versionIndex = 0
+    private var versionOutput: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,10 +112,11 @@ class MainActivity : Activity() {
                 narrationButton.isEnabled = false
                 narrationEngine?.createFive(
                     narrationInputs.map { it.text.toString() },
-                    onComplete = {
+                    onComplete = { files ->
                         runOnUiThread {
-                            narrationButton.isEnabled = true
-                            statusView.text = "Selesai: lima WAV tersimpan di Downloads/VANAPRO."
+                            versionAudioFiles = files
+                            versionIndex = 0
+                            startNextCreativeExport()
                         }
                     },
                     onFailure = { error ->
@@ -139,7 +150,8 @@ class MainActivity : Activity() {
         root.addView(narrationButton, match())
         root.addView(note, match())
         root.addView(statusView, match())
-        setContentView(root)
+        val scroll = ScrollView(this).apply { addView(root) }
+        setContentView(scroll)
     }
 
     private fun match(): LinearLayout.LayoutParams =
@@ -230,6 +242,78 @@ class MainActivity : Activity() {
                 .setPositiveButton("OK", null).show()
         } finally {
             try { retriever.release() } catch (_: Exception) { }
+        }
+    }
+
+
+    private fun startNextCreativeExport() {
+        val source = selectedVideo
+        if (source == null || versionAudioFiles.size != 5) {
+            narrationButton.isEnabled = true
+            statusView.text = "Pilih video dan siapkan lima audio narasi."
+            return
+        }
+        if (versionIndex >= versionAudioFiles.size) {
+            narrationButton.isEnabled = true
+            statusView.text = "Selesai: 5 MP4 dengan narasi baru tersimpan di Movies/VANAPRO."
+            return
+        }
+        val index = versionIndex
+        val video = EditedMediaItem.Builder(MediaItem.fromUri(source)).build()
+        val audio = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(versionAudioFiles[index]))).build()
+        val videoSequence = EditedMediaItemSequence.withVideoFrom(listOf(video))
+        val audioSequence = EditedMediaItemSequence.withAudioFrom(listOf(audio))
+        val composition = Composition.Builder(videoSequence, audioSequence).build()
+        val output = File(cacheDir, "vanapro_creative_v${index + 1}.mp4").apply { delete() }
+        versionOutput = output
+        statusView.text = "Merender video ${index + 1}/5 dengan narasi baru…"
+        try {
+            Transformer.Builder(this).addListener(object : Transformer.Listener {
+                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                    runOnUiThread {
+                        try {
+                            saveVideoToMovies(output, "VANAPRO_Version_${index + 1}.mp4")
+                            versionIndex++
+                            startNextCreativeExport()
+                        } catch (error: Exception) {
+                            narrationButton.isEnabled = true
+                            statusView.text = "Video versi ${index + 1} selesai dirender tetapi gagal disimpan: ${error.localizedMessage}"
+                        }
+                    }
+                }
+
+                override fun onError(
+                    composition: Composition,
+                    exportResult: ExportResult,
+                    exportException: ExportException
+                ) {
+                    runOnUiThread {
+                        narrationButton.isEnabled = true
+                        statusView.text = "Ekspor versi ${index + 1} gagal: ${exportException.localizedMessage}"
+                    }
+                }
+            }).build().start(composition, output.absolutePath)
+        } catch (error: Exception) {
+            narrationButton.isEnabled = true
+            statusView.text = "Tidak dapat memulai ekspor versi ${index + 1}: ${error.localizedMessage}"
+        }
+    }
+
+    private fun saveVideoToMovies(source: File, displayName: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/VANAPRO")
+            }
+            val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: error("Tidak dapat membuat file video pada Movies.")
+            contentResolver.openOutputStream(uri)?.use { output ->
+                source.inputStream().use { input -> input.copyTo(output) }
+            } ?: error("Tidak dapat menulis video output.")
+        } else {
+            val folder = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "VANAPRO").apply { mkdirs() }
+            source.copyTo(File(folder, displayName), overwrite = true)
         }
     }
 
