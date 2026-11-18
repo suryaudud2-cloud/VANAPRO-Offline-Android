@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.media3.common.MediaItem
@@ -26,10 +27,14 @@ class MainActivity : Activity() {
     private lateinit var statusView: TextView
     private lateinit var processButton: Button
     private lateinit var metadataButton: Button
+    private lateinit var narrationButton: Button
+    private lateinit var narrationInputs: List<EditText>
+    private var narrationEngine: NarrationEngine? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showHome()
+        narrationEngine = NarrationEngine(this) { message -> runOnUiThread { statusView.text = message; narrationButton.isEnabled = narrationEngine?.isReady() == true } }
     }
 
     private fun showHome() {
@@ -69,6 +74,49 @@ class MainActivity : Activity() {
             isEnabled = false
             setOnClickListener { startExport() }
         }
+        val narrationTitle = TextView(this).apply {
+            text = "AUTO CREATIVE VERSIONING • 5 NARASI"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setPadding(0, 24, 0, 8)
+        }
+        val narrationHint = TextView(this).apply {
+            text = "Isi lima naskah komentar yang berbeda dan sesuai isi video. VANAPRO membuat lima file audio WAV dengan suara Indonesia offline."
+            textSize = 13f
+            setPadding(0, 4, 0, 8)
+        }
+        val profileNames = listOf("01 CINEMATIC", "02 ENGAGEMENT", "03 STORYTELLING", "04 COMMENTARY", "05 CREATIVE CUT")
+        narrationInputs = profileNames.mapIndexed { index, profile ->
+            EditText(this).apply {
+                hint = "$profile — tulis narasi versi ${index + 1}"
+                minLines = 2
+                maxLines = 4
+                gravity = Gravity.TOP
+                textSize = 14f
+            }
+        }
+        narrationButton = Button(this).apply {
+            text = "BUAT 5 AUDIO NARASI OFFLINE"
+            isEnabled = false
+            setOnClickListener {
+                narrationButton.isEnabled = false
+                narrationEngine?.createFive(
+                    narrationInputs.map { it.text.toString() },
+                    onComplete = {
+                        runOnUiThread {
+                            narrationButton.isEnabled = true
+                            statusView.text = "Selesai: lima WAV tersimpan di Downloads/VANAPRO."
+                        }
+                    },
+                    onFailure = { error ->
+                        runOnUiThread {
+                            narrationButton.isEnabled = narrationEngine?.isReady() == true
+                            statusView.text = error
+                        }
+                    }
+                )
+            }
+        }
         val note = TextView(this).apply {
             text = "Profil iPhone 17 Pro hanya ditampilkan sebagai referensi. Identitas kamera tidak akan dipalsukan. Pemeriksaan SynthID/C2PA otomatis belum tersedia pada versi ini."
             textSize = 13f
@@ -85,6 +133,10 @@ class MainActivity : Activity() {
         root.addView(pickButton, match())
         root.addView(metadataButton, match())
         root.addView(processButton, match())
+        root.addView(narrationTitle, match())
+        root.addView(narrationHint, match())
+        narrationInputs.forEach { root.addView(it, match()) }
+        root.addView(narrationButton, match())
         root.addView(note, match())
         root.addView(statusView, match())
         setContentView(root)
@@ -179,6 +231,12 @@ class MainActivity : Activity() {
         } finally {
             try { retriever.release() } catch (_: Exception) { }
         }
+    }
+
+    override fun onDestroy() {
+        narrationEngine?.release()
+        narrationEngine = null
+        super.onDestroy()
     }
 
     private fun startExport() {
