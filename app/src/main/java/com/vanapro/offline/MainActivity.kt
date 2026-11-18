@@ -28,6 +28,7 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import java.io.File
 
+@OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity : Activity() {
     private val requestVideo = 1001
     private val requestSave = 1002
