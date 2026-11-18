@@ -24,6 +24,7 @@ class NarrationEngine(
     private var scripts: List<String> = emptyList()
     private var index = 0
     private var files: List<File> = emptyList()
+    private var failureHandler: ((String) -> Unit)? = null
 
     init {
         tts = TextToSpeech(context.applicationContext, this)
@@ -59,6 +60,7 @@ class NarrationEngine(
             onFailure("TTS belum siap atau lima naskah belum lengkap (minimal 12 karakter per naskah).")
             return
         }
+        failureHandler = onFailure
         scripts = inputScripts.map { it.trim() }
         files = scripts.indices.map { File(context.cacheDir, "vanapro_voice_v${it + 1}.wav").apply { delete() } }
         index = 0
@@ -69,7 +71,7 @@ class NarrationEngine(
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) = Unit
             override fun onError(utteranceId: String?) {
-                onFailure("TTS gagal pada versi ${index + 1}. Pastikan suara Indonesia offline terpasang.")
+                failureHandler?.invoke("TTS gagal pada versi ${index + 1}. Pastikan suara Indonesia offline terpasang.")
             }
             override fun onDone(utteranceId: String?) {
                 val completed = index
@@ -105,7 +107,7 @@ class NarrationEngine(
             "vanapro_${index + 1}"
         )
         if (result != TextToSpeech.SUCCESS) {
-            onStatus("Mesin TTS menolak naskah versi ${index + 1}.")
+            failureHandler?.invoke("Mesin TTS menolak naskah versi ${index + 1}.")
         }
     }
 
