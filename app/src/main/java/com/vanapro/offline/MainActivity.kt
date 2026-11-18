@@ -21,6 +21,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.Effects
+import androidx.media3.effect.Presentation
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
@@ -259,7 +261,9 @@ class MainActivity : Activity() {
             return
         }
         val index = versionIndex
-        val video = EditedMediaItem.Builder(MediaItem.fromUri(source)).build()
+        val video = EditedMediaItem.Builder(MediaItem.fromUri(source))
+            .setEffects(Effects(emptyList(), listOf(Presentation.createForShortSide(1080))))
+            .build()
         val audio = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(versionAudioFiles[index]))).build()
         val videoSequence = EditedMediaItemSequence.withVideoFrom(listOf(video))
         val audioSequence = EditedMediaItemSequence.withAudioFrom(listOf(audio))
